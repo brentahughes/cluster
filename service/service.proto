@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package service;
+
+service Controller {
+    rpc Checkin (NodeDetails) returns (GenericReply) {}
+    rpc ExecResponse (ExecutionResponse) returns (Empty) {}
+}
+
+service Node {
+    rpc Checkin (Empty) returns (NodeDetails) {}
+    rpc Execute (ExecutionRequest) returns (ExecutionResponse) {}
+}
+
+message NodeDetails {
+    string version = 1;
+    string hostname = 2;
+    int32 service_port = 3;
+    repeated NodeNetworkDetails networks = 4;
+}
+
+message NodeNetworkDetails {
+    string interface = 1;
+    string ip_address = 2;
+    string mac_address = 3;
+}
+
+message GenericReply {
+    string message = 1;
+}
+
+message ExecutionResponse {
+    string command = 1;
+    string std_out = 2;
+    string std_err = 3;
+    bool background = 4;
+}
+
+message ExecutionRequest {
+    string command = 1;
+    string context = 2;
+}
+
+message Empty {
+}

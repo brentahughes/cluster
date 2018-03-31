@@ -19,5 +19,7 @@ var nodeDeployCmd = &cobra.Command{
 func init() {
 	nodeCmd.AddCommand(nodeDeployCmd)
 	nodeDeployCmd.Flags().StringP("port", "p", "10000", "port for grpc service")
+	nodeDeployCmd.Flags().String("mdns_service", "_cluster._tcp", "Service name for mdns service discovery")
 	viper.BindPFlag("rpc.port", nodeDeployCmd.Flags().Lookup("port"))
+	viper.BindPFlag("mdns.service", nodeDeployCmd.Flags().Lookup("mdns_service"))
 }

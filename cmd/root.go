@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/user"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -25,4 +26,11 @@ func Execute(version string) {
 	}
 
 	viper.Set("version", version)
+}
+
+func init() {
+	user, _ := user.Current()
+
+	rootCmd.PersistentFlags().StringP("config", "c", user.HomeDir+"/.cluster/config.db", "Path to cluster config.db file")
+	viper.BindPFlag("cluster.db", rootCmd.PersistentFlags().Lookup("config"))
 }

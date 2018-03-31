@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net"
+	"os/exec"
+	"strings"
 
 	"github.com/bah2830/cluster/service"
 	"github.com/spf13/viper"
@@ -15,7 +17,20 @@ func (n *Node) Checkin(ctx context.Context, in *service.Empty) (*service.NodeDet
 }
 
 func (n *Node) Execute(ctx context.Context, in *service.ExecutionRequest) (*service.ExecutionResponse, error) {
-	return &service.ExecutionResponse{}, nil
+	command := strings.Replace(in.Command, "\n", "", -1)
+	args := strings.Split(command, " ")
+	baseCommand := args[0]
+	args = args[1:]
+
+	response := &service.ExecutionResponse{Command: command}
+	result, err := exec.Command(baseCommand, args...).Output()
+	if err != nil {
+		response.StdErr = err.Error()
+	}
+
+	response.StdOut = string(result)
+
+	return response, nil
 }
 
 func (n *Node) Details(ctx context.Context, in *service.Empty) (*service.NodeDetailsVerbose, error) {

@@ -3,13 +3,13 @@ syntax = "proto3";
 package service;
 
 service Node {
-    rpc Checkin (Empty) returns (NodeDetails) {}
+    rpc Ping (Empty) returns (Pong) {}
     rpc Execute (ExecutionRequest) returns (ExecutionResponse) {}
-    rpc Details (Empty) returns (NodeDetailsVerbose) {}
+    rpc Details (Empty) returns (NodeDetails) {}
 }
 
-message NodeDetailsVerbose {
-    NodeDetails summary = 1;
+message Pong {
+    string message = 1;
 }
 
 message NodeDetails {

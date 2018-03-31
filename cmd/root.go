@@ -25,12 +25,11 @@ func Execute(version string) {
 		os.Exit(1)
 	}
 
-	viper.Set("version", version)
+	viper.Set("api.version", version)
 }
 
 func init() {
 	user, _ := user.Current()
-
 	rootCmd.PersistentFlags().StringP("config", "c", user.HomeDir+"/.cluster/config.db", "Path to cluster config.db file")
 	viper.BindPFlag("cluster.db", rootCmd.PersistentFlags().Lookup("config"))
 }

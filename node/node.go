@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Node struct{}
+type Node struct {
+	Version string
+}
 
 type controller struct {
 	ip       string
@@ -30,7 +32,7 @@ func (n *Node) GetNodeDetails() *service.NodeDetails {
 	nodeDetails := &service.NodeDetails{
 		Hostname:    host,
 		ServicePort: int32(viper.GetInt("rpc.port")),
-		Version:     viper.GetString("version"),
+		Version:     n.Version,
 	}
 
 	ifaces, err := net.Interfaces()

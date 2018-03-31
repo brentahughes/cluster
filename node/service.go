@@ -12,11 +12,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (n *Node) Checkin(ctx context.Context, in *service.Empty) (*service.NodeDetails, error) {
-	return n.GetNodeDetails(), nil
+func (n *Node) Ping(ctx context.Context, in *service.Empty) (*service.Pong, error) {
+	log.Println("Ping request received")
+	return &service.Pong{Message: "ok"}, nil
 }
 
 func (n *Node) Execute(ctx context.Context, in *service.ExecutionRequest) (*service.ExecutionResponse, error) {
+	log.Println("Execute request received [" + in.Command + "]")
+
 	command := strings.Replace(in.Command, "\n", "", -1)
 	args := strings.Split(command, " ")
 	baseCommand := args[0]
@@ -33,8 +36,9 @@ func (n *Node) Execute(ctx context.Context, in *service.ExecutionRequest) (*serv
 	return response, nil
 }
 
-func (n *Node) Details(ctx context.Context, in *service.Empty) (*service.NodeDetailsVerbose, error) {
-	return &service.NodeDetailsVerbose{}, nil
+func (n *Node) Details(ctx context.Context, in *service.Empty) (*service.NodeDetails, error) {
+	log.Println("Details request received")
+	return n.GetNodeDetails(), nil
 }
 
 func (n *Node) startAPIServer() {

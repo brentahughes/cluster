@@ -1,19 +1,25 @@
 package controller
 
 import (
-	"strconv"
+	"fmt"
+	"time"
 
-	"github.com/bah2830/cluster/mdns"
+	"github.com/bah2830/cluster/service"
 )
 
-type controller struct {
-	nodes string
+type Controller struct {
+	nodes []*node
 }
 
-func Start(port string) {
-	portInt, _ := strconv.Atoi(port)
-	mdns := mdns.StartServer(portInt)
-	defer mdns.Shutdown()
+type node struct {
+	hostname      string
+	ip            string
+	servicePort   int
+	serviceClient *service.NodeClient
+	details       *service.NodeDetails
+	lastSeen      time.Time
+}
 
-	startServer(port)
+func (n *node) string() string {
+	return fmt.Sprintf("%s:%d (%s)", n.ip, n.servicePort, n.hostname)
 }

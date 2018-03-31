@@ -1,28 +1,17 @@
 package cmd
 
 import (
-	"github.com/bah2830/cluster/node"
 	"github.com/spf13/cobra"
-)
-
-var (
-	controllerIP   string
-	controllerPort string
-	port           string
+	"github.com/spf13/viper"
 )
 
 var nodeCmd = &cobra.Command{
 	Use:   "node",
-	Short: "Start node worker for the cluster",
-	Long:  "Adds a worker node into the cluster that will listen for commands from the controller",
-	Run: func(cmd *cobra.Command, args []string) {
-		node.Start(port)
-	},
+	Short: "Commands for managing nodes withing the cluster",
 }
 
 func init() {
 	rootCmd.AddCommand(nodeCmd)
-	nodeCmd.Flags().StringVarP(&controllerIP, "controller", "c", "", "IP of controller host")
-	nodeCmd.Flags().StringVar(&controllerPort, "controller_port", "10000", "port for grpc service")
-	nodeCmd.Flags().StringVarP(&port, "port", "p", "10000", "port for grpc service")
+	nodeCmd.PersistentFlags().String("mdns_service", "_cluster._tcp", "Service name for mdns service discovery")
+	viper.BindPFlag("mdns.service", nodeCmd.PersistentFlags().Lookup("mdns_service"))
 }

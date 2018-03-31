@@ -2,14 +2,14 @@ syntax = "proto3";
 
 package service;
 
-service Controller {
-    rpc Checkin (NodeDetails) returns (GenericReply) {}
-    rpc ExecResponse (ExecutionResponse) returns (Empty) {}
-}
-
 service Node {
     rpc Checkin (Empty) returns (NodeDetails) {}
     rpc Execute (ExecutionRequest) returns (ExecutionResponse) {}
+    rpc Details (Empty) returns (NodeDetailsVerbose) {}
+}
+
+message NodeDetailsVerbose {
+    NodeDetails summary = 1;
 }
 
 message NodeDetails {
@@ -23,10 +23,6 @@ message NodeNetworkDetails {
     string interface = 1;
     string ip_address = 2;
     string mac_address = 3;
-}
-
-message GenericReply {
-    string message = 1;
 }
 
 message ExecutionResponse {

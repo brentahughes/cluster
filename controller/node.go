@@ -56,12 +56,15 @@ func (n *node) getNodeClient() service.NodeClient {
 	return n.ServiceClient
 }
 
-func (n *node) execute(command string) *service.ExecutionResponse {
-	response, err := n.getNodeClient().Execute(context.Background(), &service.ExecutionRequest{Command: command})
+func (n *node) execute(command string) map[string]*service.ExecutionResponse {
+	response := make(map[string]*service.ExecutionResponse, 0)
+
+	nodeResponse, err := n.getNodeClient().Execute(context.Background(), &service.ExecutionRequest{Command: command})
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	response[n.Nickname] = nodeResponse
 	return response
 }
 

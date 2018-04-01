@@ -12,7 +12,9 @@ func DeployCmd() *cobra.Command {
 		Short: "Start node worker for the cluster",
 		Long:  "Adds a worker node into the cluster that will listen for commands from the controller",
 		Run: func(cmd *cobra.Command, args []string) {
-			node := node.Node{}
+			node := node.Node{
+				Version: viper.GetString("api.version"),
+			}
 
 			node.Start()
 		},

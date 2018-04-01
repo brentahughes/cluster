@@ -26,9 +26,11 @@ const (
 )
 
 type Controller struct {
-	nodes       []*node
-	nodeChanges bool
-	dbClient    *bolt.DB
+	nodes        []*node
+	nodeChanges  bool
+	groups       []*group
+	groupChanges bool
+	dbClient     *bolt.DB
 }
 
 type node struct {
@@ -40,6 +42,18 @@ type node struct {
 	ServiceClient service.NodeClient
 	LastSeen      time.Time
 	FirstSeen     time.Time
+}
+
+type group struct {
+	ID         string
+	Nickname   string
+	Nodes      []*node
+	NodeNames  []string
+	CreateDate time.Time
+}
+
+type executer interface {
+	execute(string) map[string]*service.ExecutionResponse
 }
 
 func GetController() *Controller {
@@ -135,11 +149,49 @@ func (c *Controller) saveNodes() {
 }
 
 func (c *Controller) loadGroups() {
+	groups := make([]*group, 0)
+	c.dbClient.View(func(tx *bolt.Tx) error {
+		cursor := tx.Bucket([]byte(groupBucket)).Cursor()
 
+		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
+			group := &group{}
+			json.Unmarshal(v, group)
+
+			for _, nodeName := range group.NodeNames {
+				node, err := c.getNode(nodeName)
+				if err != nil {
+					log.Println("WARNING: Unable to load all nodes for group", err)
+				} else {
+					group.Nodes = append(group.Nodes, node)
+				}
+			}
+
+			groups = append(groups, group)
+		}
+
+		return nil
+	})
+
+	c.groups = groups
 }
 
 func (c *Controller) saveGroups() {
+	if c.groupChanges == false {
+		return
+	}
 
+	c.dbClient.Update(func(tx *bolt.Tx) error {
+		for _, group := range c.groups {
+			groupCopy := *group
+			groupCopy.Nodes = make([]*node, 0)
+			jsonData, _ := json.Marshal(groupCopy)
+			if err := tx.Bucket([]byte(groupBucket)).Put([]byte(group.ID), jsonData); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (c *Controller) ListNodes() {
@@ -166,6 +218,28 @@ func (c *Controller) ListNodes() {
 	w.Flush()
 }
 
+func (c *Controller) ListGroups() {
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, 0, 8, 4, '\t', 0)
+
+	fmt.Fprintf(w, "Name\tNodes\tCreated\tID\n")
+	for _, group := range c.groups {
+		idParts := strings.Split(group.ID, "-")
+		shortID := idParts[len(idParts)-1]
+
+		fmt.Fprintf(
+			w,
+			"%s\t%d\t%s\t%s\n",
+			group.Nickname,
+			len(group.Nodes),
+			group.CreateDate.Format("2006-01-02 15:04:05"),
+			shortID,
+		)
+	}
+
+	w.Flush()
+}
+
 func (c *Controller) nodeExists(n *node) (bool, error) {
 	for _, node := range c.nodes {
 		if node.IP == n.IP {
@@ -184,6 +258,16 @@ func (c *Controller) nodeExists(n *node) (bool, error) {
 	return false, nil
 }
 
+func (c *Controller) groupExists(g *group) (bool, error) {
+	for _, group := range c.groups {
+		if group.Nickname == g.Nickname {
+			return true, errors.New("Duplicate group name")
+		}
+	}
+
+	return false, nil
+}
+
 func (c *Controller) SetNodeNickName(identifier, name string) {
 	node, err := c.getNode(identifier)
 	if err != nil {
@@ -192,6 +276,10 @@ func (c *Controller) SetNodeNickName(identifier, name string) {
 
 	if _, err := c.getNode(name); err == nil {
 		log.Fatalf("Node with identifier %s already exists", name)
+	}
+
+	if _, err := c.getGroup(name); err == nil {
+		log.Fatalf("Group with identifier %s already exists", name)
 	}
 
 	node.Nickname = name
@@ -227,14 +315,44 @@ func (c *Controller) getNode(identifier string) (*node, error) {
 	return nil, fmt.Errorf("No node with identifier %s found", identifier)
 }
 
-func (c *Controller) Execute(identifier, command string) {
-	n, err := c.getNode(identifier)
-	if err != nil {
-		log.Fatal(err)
+func (c *Controller) getGroup(identifier string) (*group, error) {
+	for _, group := range c.groups {
+		idParts := strings.Split(group.ID, "-")
+		shortID := idParts[len(idParts)-1]
+
+		if group.ID == identifier || shortID == identifier {
+			return group, nil
+		}
+
+		if group.Nickname == identifier {
+			return group, nil
+		}
 	}
 
-	response := n.execute(command)
-	fmt.Printf(response.StdOut)
+	return nil, fmt.Errorf("No group with identifier %s found", identifier)
+}
+
+func (c *Controller) Execute(identifier, command string) {
+	var n executer
+	var err error
+
+	n, err = c.getNode(identifier)
+	if err != nil {
+		// Check if it is the name of a group
+		n, err = c.getGroup(identifier)
+		if err != nil {
+			log.Fatal("No group or node found with the identifier", identifier)
+		}
+	}
+
+	responses := n.execute(command)
+
+	for nodeName, response := range responses {
+		fmt.Println("Response from", nodeName)
+		fmt.Println("====================================================================")
+		fmt.Println(response.StdOut)
+		fmt.Println(response.StdErr)
+	}
 }
 
 func (c *Controller) FindNodes() {
@@ -291,4 +409,61 @@ func (c *Controller) NodeDetails(identifier string) {
 	details := node.details()
 	jsonString, _ := yaml.Marshal(details)
 	fmt.Println(string(jsonString))
+}
+
+func (c *Controller) CreateGroup(name string, nodes []string) {
+	group := &group{
+		ID:         uuid.New().String(),
+		Nickname:   name,
+		NodeNames:  nodes,
+		CreateDate: time.Now(),
+	}
+
+	if exists, err := c.groupExists(group); exists {
+		log.Fatal(err)
+	}
+
+	if exists, err := c.nodeExists(&node{Nickname: name}); exists {
+		log.Fatal(err)
+	}
+
+	for _, nodeName := range nodes {
+		if _, err := c.getNode(nodeName); err != nil {
+			log.Fatal(err)
+		}
+	}
+	c.groups = append(c.groups, group)
+	c.groupChanges = true
+}
+
+func (c *Controller) DeleteGroup(identifier string) {
+	g, err := c.getGroup(identifier)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	g.delete(c.dbClient)
+}
+
+func (c *Controller) AddNodesToGroup(identifer string, nodes []string) {
+	group, err := c.getGroup(identifer)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, nodeName := range nodes {
+		node, _ := group.getNode(nodeName)
+		if node != nil {
+			log.Fatalf("Node %s is already a part of this group", nodeName)
+		}
+
+		node, err = c.getNode(nodeName)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		group.NodeNames = append(group.NodeNames, nodeName)
+		group.Nodes = append(group.Nodes, node)
+		c.groupChanges = true
+	}
 }

@@ -15,14 +15,9 @@ type Node struct {
 	Version string
 }
 
-type controller struct {
-	ip       string
-	port     int
-	hostname string
-}
-
 func (n *Node) Start() {
-	go startMDNS()
+	server := n.startMDNS()
+	defer server.Shutdown()
 	n.startAPIServer()
 }
 
@@ -74,19 +69,27 @@ func (n *Node) GetNodeDetails() *service.NodeDetails {
 	return nodeDetails
 }
 
-func startMDNS() *mdns.Server {
-	log.Printf("Starting mdns service advertising on %s", viper.GetString("mdns.service"))
+func (n *Node) startMDNS() *mdns.Server {
+	details := n.GetNodeDetails()
+	ip := details.Networks[0].IpAddress
+	addr := net.ParseIP(ip)
+
+	log.Printf("Starting mdns service advertising on %s (%s)", ip, viper.GetString("mdns.service"))
+
 	host, _ := os.Hostname()
 
-	mdnsService, _ := mdns.NewMDNSService(
+	mdnsService, err := mdns.NewMDNSService(
 		host,
 		viper.GetString("mdns.service"),
 		"",
 		"",
 		viper.GetInt("rpc.port"),
-		nil,
+		[]net.IP{addr},
 		[]string{"cluster_management"},
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	server, _ := mdns.NewServer(&mdns.Config{Zone: mdnsService})
 	return server

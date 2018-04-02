@@ -1,15 +1,18 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/bah2830/cluster/service"
 	"github.com/boltdb/bolt"
 )
 
-func (g *group) delete(dbClient *bolt.DB) {
+func (g *group) delete() {
 	err := dbClient.Update(func(tx *bolt.Tx) error {
 		if err := tx.Bucket([]byte(groupBucket)).Delete([]byte(g.ID)); err != nil {
 			return err
@@ -73,4 +76,55 @@ func (g *group) getNode(identifier string) (*node, error) {
 	}
 
 	return nil, fmt.Errorf("No node with identifier %s found", identifier)
+}
+
+func (g *group) save() {
+	err := dbClient.Update(func(tx *bolt.Tx) error {
+		g.Nodes = make([]*node, 0)
+		jsonData, _ := json.Marshal(g)
+		if err := tx.Bucket([]byte(groupBucket)).Put([]byte(g.ID), jsonData); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Fatalln("Error updating group", err)
+	}
+}
+
+func (g *group) details() {
+	yamlString, _ := yaml.Marshal(g)
+	fmt.Println(string(yamlString))
+}
+
+func (g *group) ping() map[string]bool {
+	responses := make(map[string]bool)
+	responseCh := make(chan map[string]bool, 0)
+
+	executions := 0
+	for _, n := range g.Nodes {
+		executions++
+		go func(n *node, responseCh chan map[string]bool) {
+			nodeResponse := n.ping()
+			responseCh <- nodeResponse
+		}(n, responseCh)
+	}
+
+	responded := 0
+	for {
+		select {
+		case nodeResponse := <-responseCh:
+			responded++
+			for nodeName, r := range nodeResponse {
+				responses[nodeName] = r
+			}
+
+			if responded == executions {
+				return responses
+			}
+		}
+
+	}
 }

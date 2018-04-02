@@ -25,12 +25,13 @@ const (
 	groupBucket = "groups"
 )
 
+var dbClient *bolt.DB
+
 type Controller struct {
 	nodes        []*node
 	nodeChanges  bool
 	groups       []*group
 	groupChanges bool
-	dbClient     *bolt.DB
 }
 
 type node struct {
@@ -54,6 +55,7 @@ type group struct {
 
 type executer interface {
 	execute(string) map[string]*service.ExecutionResponse
+	ping() map[string]bool
 }
 
 func GetController() *Controller {
@@ -65,8 +67,9 @@ func GetController() *Controller {
 		os.Mkdir(user.HomeDir+"/.cluster", 0700)
 	}
 
+	getDBConnection()
+
 	c := &Controller{}
-	c.getDBConnection()
 	c.loadNodes()
 	c.loadGroups()
 
@@ -76,15 +79,11 @@ func GetController() *Controller {
 func (c *Controller) CleanExit() {
 	c.saveNodes()
 	c.saveGroups()
-
-	if c.dbClient != nil {
-		c.dbClient.Close()
-	}
 }
 
-func (c *Controller) getDBConnection() *bolt.DB {
-	if c.dbClient != nil {
-		return c.dbClient
+func getDBConnection() *bolt.DB {
+	if dbClient != nil {
+		return dbClient
 	}
 
 	db, err := bolt.Open(viper.GetString("cluster.db"), 0600, &bolt.Options{Timeout: 1 * time.Second})
@@ -106,7 +105,7 @@ func (c *Controller) getDBConnection() *bolt.DB {
 		log.Fatal(err)
 	}
 
-	c.dbClient = db
+	dbClient = db
 
 	return db
 
@@ -114,7 +113,7 @@ func (c *Controller) getDBConnection() *bolt.DB {
 
 func (c *Controller) loadNodes() {
 	nodes := make([]*node, 0)
-	c.dbClient.View(func(tx *bolt.Tx) error {
+	dbClient.View(func(tx *bolt.Tx) error {
 		cursor := tx.Bucket([]byte(nodeBucket)).Cursor()
 
 		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
@@ -134,7 +133,7 @@ func (c *Controller) saveNodes() {
 		return
 	}
 
-	c.dbClient.Update(func(tx *bolt.Tx) error {
+	dbClient.Update(func(tx *bolt.Tx) error {
 		for _, node := range c.nodes {
 			nodeCopy := *node
 			nodeCopy.ServiceClient = nil
@@ -150,7 +149,7 @@ func (c *Controller) saveNodes() {
 
 func (c *Controller) loadGroups() {
 	groups := make([]*group, 0)
-	c.dbClient.View(func(tx *bolt.Tx) error {
+	dbClient.View(func(tx *bolt.Tx) error {
 		cursor := tx.Bucket([]byte(groupBucket)).Cursor()
 
 		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
@@ -180,7 +179,7 @@ func (c *Controller) saveGroups() {
 		return
 	}
 
-	c.dbClient.Update(func(tx *bolt.Tx) error {
+	dbClient.Update(func(tx *bolt.Tx) error {
 		for _, group := range c.groups {
 			groupCopy := *group
 			groupCopy.Nodes = make([]*node, 0)
@@ -283,7 +282,25 @@ func (c *Controller) SetNodeNickName(identifier, name string) {
 	}
 
 	node.Nickname = name
-	node.save(c.dbClient)
+	node.save()
+}
+
+func (c *Controller) SetGroupNickName(identifier, name string) {
+	group, err := c.getGroup(identifier)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := c.getGroup(name); err == nil {
+		log.Fatalf("Group with identifier %s already exists", name)
+	}
+
+	if _, err := c.getNode(name); err == nil {
+		log.Fatalf("Node with identifier %s already exists", name)
+	}
+
+	group.Nickname = name
+	group.save()
 }
 
 func (c *Controller) DeleteNode(identifier string) {
@@ -291,7 +308,7 @@ func (c *Controller) DeleteNode(identifier string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	n.delete(c.dbClient)
+	n.delete()
 }
 
 func (c *Controller) getNode(identifier string) (*node, error) {
@@ -442,7 +459,7 @@ func (c *Controller) DeleteGroup(identifier string) {
 		log.Fatal(err)
 	}
 
-	g.delete(c.dbClient)
+	g.delete()
 }
 
 func (c *Controller) AddNodesToGroup(identifer string, nodes []string) {
@@ -466,4 +483,39 @@ func (c *Controller) AddNodesToGroup(identifer string, nodes []string) {
 		group.Nodes = append(group.Nodes, node)
 		c.groupChanges = true
 	}
+}
+
+func (c *Controller) GroupDetails(identifier string) {
+	group, err := c.getGroup(identifier)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	group.details()
+}
+
+func (c *Controller) Ping(identifier string) {
+	var n executer
+	var err error
+
+	n, err = c.getNode(identifier)
+	if err != nil {
+		// Check if it is the name of a group
+		n, err = c.getGroup(identifier)
+		if err != nil {
+			log.Fatal("No group or node found with the identifier", identifier)
+		}
+	}
+
+	responses := n.ping()
+
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, 0, 8, 4, '\t', 0)
+	fmt.Fprintln(w, "NODE\tONLINE")
+
+	for nodeName, response := range responses {
+		fmt.Fprintf(w, "%s\t%t\n", nodeName, response)
+	}
+
+	w.Flush()
 }

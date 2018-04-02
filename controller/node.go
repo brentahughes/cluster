@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bah2830/cluster/service"
 	"github.com/boltdb/bolt"
@@ -15,7 +16,7 @@ func (n *node) string() string {
 	return fmt.Sprintf("%s:%d (%s)", n.IP, n.ServicePort, n.Hostname)
 }
 
-func (n *node) save(dbClient *bolt.DB) {
+func (n *node) save() {
 	err := dbClient.Update(func(tx *bolt.Tx) error {
 		jsonData, _ := json.Marshal(n)
 		if err := tx.Bucket([]byte(nodeBucket)).Put([]byte(n.ID), jsonData); err != nil {
@@ -30,7 +31,7 @@ func (n *node) save(dbClient *bolt.DB) {
 	}
 }
 
-func (n *node) delete(dbClient *bolt.DB) {
+func (n *node) delete() {
 	err := dbClient.Update(func(tx *bolt.Tx) error {
 		if err := tx.Bucket([]byte(nodeBucket)).Delete([]byte(n.ID)); err != nil {
 			return err
@@ -62,9 +63,11 @@ func (n *node) execute(command string) map[string]*service.ExecutionResponse {
 	nodeResponse, err := n.getNodeClient().Execute(context.Background(), &service.ExecutionRequest{Command: command})
 	if err != nil {
 		log.Fatal(err)
+	} else {
+		response[n.Nickname] = nodeResponse
+		n.updateLastSeen()
 	}
 
-	response[n.Nickname] = nodeResponse
 	return response
 }
 
@@ -75,4 +78,23 @@ func (n *node) details() *service.NodeDetails {
 	}
 
 	return response
+}
+
+func (n *node) ping() map[string]bool {
+	response := make(map[string]bool, 0)
+
+	_, err := n.getNodeClient().Ping(context.Background(), &service.Empty{})
+	if err != nil {
+		response[n.Nickname] = false
+	} else {
+		response[n.Nickname] = true
+		n.updateLastSeen()
+	}
+
+	return response
+}
+
+func (n *node) updateLastSeen() {
+	n.LastSeen = time.Now()
+	n.save()
 }
